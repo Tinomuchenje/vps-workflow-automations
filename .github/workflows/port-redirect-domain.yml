@@ -1,0 +1,44 @@
+name: Redirecting subdomains to specific ports
+
+on:
+  workflow_dispatch: # This allows you to trigger the workflow manually
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Create Nginx Configurations
+        run: |
+          ssh ${{ secrets.SSH_USERNAME }}@${{ secrets.SERVER_IP }} << 'EOF'
+            # Create Nginx Config for the subdomain
+            echo 'server {
+                listen 80;
+                server_name ${{ secrets.SUBDOMAIN }};
+                location / {
+                    proxy_pass http://localhost:${{ secrets.PORT }};
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+            }' | sudo tee /etc/nginx/sites-available/${{ secrets.SUBDOMAIN }}
+
+            sudo ln -sf /etc/nginx/sites-available/${{ secrets.SUBDOMAIN }} /etc/nginx/sites-enabled/
+          EOF
+
+      - name: Test Nginx Configuration
+        run: |
+          ssh ${{ secrets.SSH_USERNAME }}@${{ secrets.SERVER_IP }} 'sudo nginx -t'
+
+      - name: Reload Nginx
+        run: |
+          ssh ${{ secrets.SSH_USERNAME }}@${{ secrets.SERVER_IP }} 'sudo systemctl reload nginx'
